@@ -64,11 +64,11 @@ class globalSLRModel:
     This employs the DAIS model (Shaffer, 2014)
     '''
 
-    def __init__(self, T, OHC_changes, sy=1750, ey=2300, dt=1.0, dbg=0):
+    def __init__(self, T, OHC_change, sy=1750, ey=2300, dt=1.0, dbg=0):
 
         ########## Set some global variables ################
         self.T_anomaly = T
-        self.OHC_changes = OHC_changes
+        self.OHC_change = OHC_change
 
         self.dbg = dbg
         
@@ -182,13 +182,14 @@ class globalSLRModel:
     def integrate(self, silent=True):
         if not silent: print('Start integrating...')
 
-        __AIS_init()
+        self.__AIS_init()
         for i in range(0, self.nyears-1):
-            __update_SLR_thermo(i)
-            __update_SLR_LWS(i)
-            __update_SLR_MG(i)
-            __update_SLR_GIS(i)
-            __update_SLR_AIS(i)
+            if self.dbg==1: print('Year: ', i)
+            self.__update_SLR_thermo(i)
+            self.__update_SLR_LWS(i)
+            self.__update_SLR_MG(i)
+            self.__update_SLR_GIS(i)
+            self.__update_SLR_AIS(i)
 
             self.SLR_total[i+1] = self.SLR_thermo[i+1] + self.SLR_LWS[i+1] + self.SLR_MG[i+1] + self.SLR_GIS[i+1] + self.SLR_AIS[i+1]
 
@@ -197,15 +198,18 @@ class globalSLRModel:
 
 
     def __update_SLR_thermo(self,i):
+        if self.dbg==1: print('   SLR thermo: ', i)
         self.SLR_thermo[i+1] = self.SLR_thermo[i] + self.thermo_m_per_YJ * self.OHC_change[i]
         return
 
     def __update_SLR_LWS(self, i):
+        if self.dbg==1: print('   SLR LWS: ', i)        
         if self.time[i] >= self.LWS_startyear: 
             self.SLR_LWS[i+1] = self.SLR_LWS[i] + np.random.normal(loc=self.LWS_rate, scale=self.LWS_shape)
         return
 
     def __update_SLR_MG(self, i):
+        if self.dbg==1: print('   SLR MG: ', i)
         if self.time[i] >= self.MG_startyear:
             change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq) * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
         else: change = 0.0
@@ -214,6 +218,7 @@ class globalSLRModel:
 
 
     def __update_SLR_GIS(self, i):
+        if self.dbg==1: print('   SLR GIS: ', i)
         T = self.T_anomaly[i]
 
         if T >= 0.0: term1 = (self.GIS_X*T + (1.-self.GIS_X)*T**self.GIS_p)
@@ -222,15 +227,15 @@ class globalSLRModel:
 
         self.GIS_SMB_annual[i+1] = self.GIS_v * term1 * term2
 
-
         if T >= 0.0: tmp = self.GIS_rho * self.GIS_outlet_vdis[i] * np.exp(self.GIS_eps*T)
         else: tmp = 0.0
+
         self.GIS_outlet_vdis[i+1] = self.GIS_outlet_vdis[i] - tmp
-         
-        self.SLR_GIS[i+1] = self.GIS_s*(self.GIS_outlet_max - self.GIS_outlet_vdis[i+1]) + np.cumsum(self.GIS_SMB_annual[:i+1])
+        TEST = np.sum(self.GIS_SMB_annual[:i+1])
+        self.SLR_GIS[i+1] = self.GIS_s*(self.GIS_outlet_max - self.GIS_outlet_vdis[i+1]) + TEST
         return
 
-    def __AIS_init(self, i):
+    def __AIS_init(self):
         R = self.AIS_Rad0
         rc = self.AIS_b0/self.AIS_slope
         V = np.pi * (1+self.AIS_eps1) * ( (8./15.) * self.AIS_mu**0.5 * R**2.5 - (1./3.)*self.AIS_slope*R**3)
@@ -241,6 +246,7 @@ class globalSLRModel:
 
 
     def __update_SLR_AIS(self, i):
+        if self.dbg==1: print('   SLR AIS: ', i)
         Tg = self.T_anomaly[i]
         R = self.AIS_Radius[i]
         V = self.AIS_Volume[i]
@@ -273,7 +279,7 @@ class globalSLRModel:
         beta = self.AIS_nu * P**(0.5)      # equation 7 (corrected with respect to text)
 
              
-        rR = self.R - ((hr - self.AIS_b0 + self.AIS_slope*R)**2) / self.AIS_mu
+        rR = R - ((hr - self.AIS_b0 + self.AIS_slope*R)**2) / self.AIS_mu
         Btot_1 = P * Pi * R**2 - \
         Pi * beta * (hr - self.AIS_b0 + self.AIS_slope*R) * (R*R - rR*rR) - \
         (4. * Pi * beta * self.AIS_mu**0.5 *   (R-rR)**2.5) / 5.  + \
