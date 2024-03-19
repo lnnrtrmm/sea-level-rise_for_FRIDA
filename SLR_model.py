@@ -118,6 +118,9 @@ class globalSLRModel:
         ####################################################################################
 
         ## Other parameters
+        # thermosteric component
+        self.thermo_startyear = self.sy
+
         # Land water storage component
         self.LWS_shape = 0.00018
         self.LWS_startyear = 2000
@@ -130,6 +133,7 @@ class globalSLRModel:
         self.MG_V_0 = 0.41
 
         # GrIS component
+        self.GIS_startyear = self.sy
         self.GIS_s = 5
         self.GIS_v = 0.0001148
         self.GIS_X = 0.0
@@ -137,6 +141,7 @@ class globalSLRModel:
         self.GIS_SMB_max = 7.36    # m
 
         # AntIS component
+        self.AIS_startyear = self.sy+1
         self.AIS_rho_w = 1030.
         self.AIS_rho_i = 917.
         self.AIS_rho_m = 4000.
@@ -153,9 +158,9 @@ class globalSLRModel:
         self.SLR_AIS    = np.zeros((self.nyears))
         self.SLR_total  = np.zeros((self.nyears))
 
-        self.GIS_SMB_annual = np.zeros((self.nyears))
+        self.SLR_GIS_SMB = np.zeros((self.nyears))
+        self.SLR_GIS_DIS = np.zeros((self.nyears))
         self.GIS_outlet_vdis = np.zeros((self.nyears))
-        self.GIS_DIS_annual = np.zeros((self.nyears))
 
 
         self.AIS_Volume = np.zeros((self.nyears))
@@ -163,7 +168,7 @@ class globalSLRModel:
 
 
     def reset_SLR(self):
-        ########## Initialize arrays ################
+        ########## Initialize arrays again ################
         self.SLR_thermo = np.zeros((self.nyears))
         self.SLR_LWS    = np.zeros((self.nyears))
         self.SLR_MG     = np.zeros((self.nyears))
@@ -171,25 +176,37 @@ class globalSLRModel:
         self.SLR_AIS    = np.zeros((self.nyears))
         self.SLR_total  = np.zeros((self.nyears))
 
-        self.GIS_SMB_annual = np.zeros((self.nyears))
+        self.SLR_GIS_SMB = np.zeros((self.nyears))
+        self.SLR_GIS_DIS = np.zeros((self.nyears))
         self.GIS_outlet_vdis = np.zeros((self.nyears))
-
 
         self.AIS_Volume = np.zeros((self.nyears))
         self.AIS_Radius = np.zeros((self.nyears))
+
+
+    def align(self, year):
+        index = int(year - self.sy)
+        print('Aligning SLR to be 0 in year '+str(year)+' (index: '+str(index)+')')
+        self.SLR_thermo = self.SLR_thermo - self.SLR_thermo[index]
+        self.SLR_LWS = self.SLR_LWS - self.SLR_LWS[index]
+        self.SLR_MG = self.SLR_MG - self.SLR_MG[index]
+        self.SLR_GIS = self.SLR_GIS - self.SLR_GIS[index]
+        self.SLR_AIS = self.SLR_AIS - self.SLR_AIS[index]
+        self.SLR_total = self.SLR_total - self.SLR_total[index]
 
 
     def integrate(self, silent=True):
         if not silent: print('Start integrating...')
 
         self.__AIS_init()
+        self.__GIS_init()
         for i in range(0, self.nyears-1):
             if self.dbg==1: print('Year: ', i)
-            self.__update_SLR_thermo(i)
-            self.__update_SLR_LWS(i)
-            self.__update_SLR_MG(i)
-            self.__update_SLR_GIS(i)
-            self.__update_SLR_AIS(i)
+            if self.time[i] >= self.thermo_startyear: self.__update_SLR_thermo(i)
+            if self.time[i] >= self.LWS_startyear:    self.__update_SLR_LWS(i)
+            if self.time[i] >= self.MG_startyear:     self.__update_SLR_MG(i)
+            if self.time[i] >= self.GIS_startyear:    self.__update_SLR_GIS(i)
+            if self.time[i] >= self.AIS_startyear:    self.__update_SLR_AIS(i)
 
             self.SLR_total[i+1] = self.SLR_thermo[i+1] + self.SLR_LWS[i+1] + self.SLR_MG[i+1] + self.SLR_GIS[i+1] + self.SLR_AIS[i+1]
 
@@ -199,23 +216,24 @@ class globalSLRModel:
 
     def __update_SLR_thermo(self,i):
         if self.dbg==1: print('   SLR thermo: ', i)
-        self.SLR_thermo[i+1] = self.SLR_thermo[i] + self.thermo_m_per_YJ * self.OHC_change[i]
+        self.SLR_thermo[i+1] = self.SLR_thermo[i] + self.thermo_m_per_YJ * 1.e-24 * self.OHC_change[i]
         return
 
     def __update_SLR_LWS(self, i):
         if self.dbg==1: print('   SLR LWS: ', i)        
-        if self.time[i] >= self.LWS_startyear: 
-            self.SLR_LWS[i+1] = self.SLR_LWS[i] + np.random.normal(loc=self.LWS_rate, scale=self.LWS_shape)
+        self.SLR_LWS[i+1] = self.SLR_LWS[i] + np.random.normal(loc=self.LWS_rate, scale=self.LWS_shape)
         return
 
     def __update_SLR_MG(self, i):
         if self.dbg==1: print('   SLR MG: ', i)
-        if self.time[i] >= self.MG_startyear:
-            change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq) * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
-        else: change = 0.0
+        change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq) * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
         self.SLR_MG[i+1] = self.SLR_MG[i] + change
         return
 
+
+    def __GIS_init(self):
+        self.GIS_outlet_vdis[:] = self.GIS_outlet_max
+        return
 
     def __update_SLR_GIS(self, i):
         if self.dbg==1: print('   SLR GIS: ', i)
@@ -223,25 +241,48 @@ class globalSLRModel:
 
         if T >= 0.0: term1 = (self.GIS_X*T + (1.-self.GIS_X)*T**self.GIS_p)
         else: term1 = 0.0
-        term2 = np.sqrt(1.0 - self.GIS_SMB_annual[i]/self.GIS_SMB_max)
+        term2 = np.sqrt(1.0 - self.SLR_GIS_SMB[i]/self.GIS_SMB_max)
+    
 
-        self.GIS_SMB_annual[i+1] = self.GIS_v * term1 * term2
+        if self.dbg == 'GIS': print(i, 'Tanomaly:', T)
+        if self.dbg == 'GIS': print(i, 'term1:', term1)
+        if self.dbg == 'GIS': print(i, 'term2:', term2)
+        
 
-        if T >= 0.0: tmp = self.GIS_rho * self.GIS_outlet_vdis[i] * np.exp(self.GIS_eps*T)
-        else: tmp = 0.0
+        self.SLR_GIS_SMB[i+1] = self.SLR_GIS_SMB[i] + self.GIS_v * term1 * term2
+        if self.dbg == 'GIS': print(i, 'SLR_GIS_SMB:',  self.SLR_GIS_SMB[i+1])
+
+        tmp = self.GIS_rho * self.GIS_outlet_vdis[i] * np.exp(self.GIS_eps*T)
+        if tmp < 0: tmp = 0.0
 
         self.GIS_outlet_vdis[i+1] = self.GIS_outlet_vdis[i] - tmp
-        TEST = np.sum(self.GIS_SMB_annual[:i+1])
-        self.SLR_GIS[i+1] = self.GIS_s*(self.GIS_outlet_max - self.GIS_outlet_vdis[i+1]) + TEST
+        self.SLR_GIS_DIS[i+1] = self.GIS_s*(self.GIS_outlet_max - self.GIS_outlet_vdis[i+1])
+
+        self.SLR_GIS[i+1] = self.SLR_GIS_DIS[i+1] + self.SLR_GIS_SMB[i+1]
+
+        if self.dbg == 'GIS':
+            print(i, 'tmp:', tmp)
+            print(i, 'GIS_outlet_vdis:', self.GIS_outlet_vdis[i+1] )
+            print(i, 'SLR_GIS_DIS:', self.SLR_GIS_DIS[i+1])
+            print(i, 'SLR_GIS:', self.SLR_GIS[i+1])
+
+
         return
 
     def __AIS_init(self):
         R = self.AIS_Rad0
         rc = self.AIS_b0/self.AIS_slope
         V = np.pi * (1+self.AIS_eps1) * ( (8./15.) * self.AIS_mu**0.5 * R**2.5 - (1./3.)*self.AIS_slope*R**3)
-        if R>rc: V = np.pi*self.AIS_eps2 * ( (2./3.)  * self.AIS_slope*(R**3-rc**3)-self.AIS_b0*(R**2-rc**2) )
-        self.AIS_Volume[0] = V
-        self.AIS_Radius[0] = R
+        if R>rc: V = V - np.pi*self.AIS_eps2 * ( (2./3.)  * self.AIS_slope*(R**3-rc**3)-self.AIS_b0*(R**2-rc**2) )
+        self.AIS_Volume[:] = V
+        self.AIS_Radius[:] = R
+
+        if self.dbg == 'AIS':
+            print('rc init: ', rc)
+            print('V init: ', V)
+            print('V init: ', V)
+            print('R init: ', R)
+
         return
 
 
@@ -251,8 +292,8 @@ class globalSLRModel:
         R = self.AIS_Radius[i]
         V = self.AIS_Volume[i]
         SL = self.SLR_total[i]
-        dSL = self.SLR_thermo[i+1] + self.SLR_LWS[i+1] + self.SLR_MG[i+1] + self.SLR_GIS[i+1] - SL
-        AIS_includes_dSLais = 0.0
+        dSL = SL - self.SLR_total[i-1]
+        AIS_includes_dSLais = 1.0
 
         # define some constants
         Pi = np.pi
@@ -271,6 +312,10 @@ class globalSLRModel:
         b_anto = 0.5
         Toc = Tf + (a_anto*Tg + b_anto-Tf) / (1. + np.exp(-Tg+(Tf-b_anto)/a_anto))
 
+        if self.dbg == 'AIS': print(i, 'SL:', SL)
+        if self.dbg == 'AIS': print(i, 'dSL:', dSL)
+        if self.dbg == 'AIS': print(i, 'Ta:', Ta)
+        if self.dbg == 'AIS': print(i, 'Toc:', Toc)
 
         # Start model
         hr   = self.AIS_h0 + self.AIS_c * Ta        # equation 5
@@ -288,6 +333,8 @@ class globalSLRModel:
              
         if hr > 0: Btot = Btot_1
         else: Btot = Btot_2
+
+        if self.dbg == 'AIS': print(i, 'Btot:', Btot)
                                   
         F_1   = 0.   # no ice flux
         ISO_1 = 0.   # (third term equation 14) NAME?
@@ -325,14 +372,30 @@ class globalSLRModel:
         self.AIS_Volume[i+1] = V + (Btot-F+ISO)
 
         self.SLR_AIS[i+1] = 57. * (1. - self.AIS_Volume[i+1]/self.AIS_Volume[0])
+
+        if self.dbg == 'AIS':
+            print(i, 'F:', F)
+            print(i, 'ISO:', ISO)
+            print(i, 'fac:', fac)
+
+            print(i, 'R: ', self.AIS_Radius[i+1])
+            print(i, 'V: ', self.AIS_Volume[i+1])
+
+            print(i, 'SLR_AIS: ', self.SLR_AIS[i+1])
+
+            print()
+
+
+
         return
 
 
-    def get_SLR_total(self):    return self.SLR_total
-    def get_SLR_thermo(self):    return self.SLR_thermo
-    def get_SLR_LWS(self):    return self.SLR_LWS
-    def get_SLR_MG(self):    return self.SLR_MG
-    def get_SLR_GIS(self):    return self.SLR_GIS
-    def get_SLR_AIS(self):    return self.SLR_AIS
-    def get_time(self):         return self.time
-    def get_Tanomaly(self):     return self.T_anomaly
+    def getSLRTotal(self):    return self.SLR_total
+    def getSLRThermo(self):    return self.SLR_thermo
+    def getSLRLWS(self):    return self.SLR_LWS
+    def getSLRMG(self):    return self.SLR_MG
+    def getSLRGIS(self):    return self.SLR_GIS
+    def getSLRAIS(self):    return self.SLR_AIS
+    def getTime(self):         return self.time
+    def getTanomaly(self):     return self.T_anomaly
+    def getOHCchange(self):     return self.OHC_change
