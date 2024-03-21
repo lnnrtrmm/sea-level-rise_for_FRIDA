@@ -235,10 +235,7 @@ class globalSLRModel:
         self.AIS_a_anto = self.AIS_a_anto0 + self.AIS_anto_addend*3.
         self.AIS_b_anto = self.AIS_b_anto0 + self.AIS_anto_addend
 
-        if self.include_MICI:
-            self.GIS_p = 2.5
-        else:
-            self.AIS_T_crit = 999.
+        if not self.include_MICI: self.AIS_T_crit = 999.
 
     def __update_SLR_thermo(self,i):
         if self.dbg==1: print('   SLR thermo: ', i)
