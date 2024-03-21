@@ -64,11 +64,12 @@ class globalSLRModel:
     This employs the DAIS model (Shaffer, 2014)
     '''
 
-    def __init__(self, T, OHC_change, sy=1750, ey=2300, dt=1.0, dbg=0):
+    def __init__(self, T, OHC_change, sy=1750, ey=2300, dt=1.0, dbg=0, include_MICI=False):
 
         ########## Set some global variables ################
         self.T_anomaly = T
         self.OHC_change = OHC_change
+        self.include_MICI = include_MICI
 
         self.dbg = dbg
         
@@ -85,33 +86,22 @@ class globalSLRModel:
         ###########          Tune these parameters          ################################
         ####################################################################################
         ### Tuning for thermosteric component
-        self.thermo_m_per_YJ = 0.11
+        self.thermo_m_per_YJ = 0.105 # [0.09 - 0.12] uncertainty range
 
         ### Tuning for Land water storage component
         self.LWS_rate = 0.0003
 
         ### Tuning for Mountain glacier component
-
+        self.MG_exp = 1.5   # [1, 2] -> Not needed, uncertainty in T input already covers IPCC estimated uncertainty range
 
         ### Tuning for Greenland Ice Sheet component
-        self.GIS_rho = 7.933e-4
-        self.GIS_eps = 0.4722
-        self.GIS_outlet_max = 0.05363 
-
+        self.GIS_scale_factor = 0.85   # [0.7, 1.0] range to get some uncertainty in the model
 
         ### Tuning for Antarctic Ice Sheet component
-        self.AIS_gamma = 2.
-        self.AIS_alpha = 0.35
-        self.AIS_mu = 8.7
-        self.AIS_nu = 0.012
-        self.AIS_P0 = 0.35
-        self.AIS_kappa = 0.04
-        self.AIS_f0 = 1.2
-        self.AIS_h0 = 1700.
-        self.AIS_c = 95.
-        self.AIS_b0 = 775.
-        self.AIS_slope = 0.0006
-        
+        self.AIS_anto_addend = 0.04            # [0.02, 0.07]
+        self.AIS_disintegration_rate = 0.0093  # [0.0045 - 0.017]
+        self.AIS_T_crit = -15.0                # [-16, -14.6]
+
 
 
         ####################################################################################
@@ -126,21 +116,39 @@ class globalSLRModel:
         self.LWS_startyear = 2000
 
         # Mountain glacier component
-        self.MG_startyear = 1850
-        self.MG_T_eq = 0.0
         self.MG_beta_0 = 0.0008
         self.MG_n = 1.646
+        self.MG_startyear = 1850
+        self.MG_T_eq = 0.0
         self.MG_V_0 = 0.41
 
         # GrIS component
         self.GIS_startyear = self.sy
         self.GIS_s = 5
-        self.GIS_v = 0.0001148
+        self.GIS_v0 = 0.0001148
         self.GIS_X = 0.0
         self.GIS_p = 2.0169
         self.GIS_SMB_max = 7.36    # m
+        self.GIS_rho0 = 7.933e-4
+        self.GIS_eps = 0.4722
+        self.GIS_outlet_max0 = 0.05363 
+
 
         # AntIS component
+        self.AIS_a_anto0 = 0.2
+        self.AIS_b_anto0 = 0.4
+        self.AIS_gamma = 2.
+        self.AIS_alpha = 0.35
+        self.AIS_mu = 8.7
+        self.AIS_nu = 0.012
+        self.AIS_P0 = 0.35
+        self.AIS_kappa = 0.04
+        self.AIS_f0 = 1.2
+        self.AIS_h0 = 1700.
+        self.AIS_c = 95.
+        self.AIS_b0 = 775.
+        self.AIS_slope = 0.0006
+
         self.AIS_startyear = self.sy+1
         self.AIS_rho_w = 1030.
         self.AIS_rho_i = 917.
@@ -184,9 +192,9 @@ class globalSLRModel:
         self.AIS_Radius = np.zeros((self.nyears))
 
 
-    def align(self, year):
+    def align(self, year, silent=False):
         index = int(year - self.sy)
-        print('Aligning SLR to be 0 in year '+str(year)+' (index: '+str(index)+')')
+        if not silent: print('Aligning SLR to be 0 in year '+str(year)+' (index: '+str(index)+')')
         self.SLR_thermo = self.SLR_thermo - self.SLR_thermo[index]
         self.SLR_LWS = self.SLR_LWS - self.SLR_LWS[index]
         self.SLR_MG = self.SLR_MG - self.SLR_MG[index]
@@ -197,6 +205,8 @@ class globalSLRModel:
 
     def integrate(self, silent=True):
         if not silent: print('Start integrating...')
+
+        self.__init_params()
 
         self.__AIS_init()
         self.__GIS_init()
@@ -212,7 +222,23 @@ class globalSLRModel:
 
         if not silent: print('   ...finished')
 
+    def __init_params(self):
+        ## Adjust GIS parameters with scaling factor
+        GIS_fac = self.GIS_scale_factor
+        if GIS_fac < 0.7 or GIS_fac > 1.1: sys.exit('GIS scale factor outside range (0.7 - 1.1)!')
+        self.GIS_rho = self.GIS_rho0 * GIS_fac
+        self.GIS_outlet_max = self.GIS_outlet_max0 * GIS_fac
+        self.GIS_v = self.GIS_v0 * GIS_fac
 
+
+        if self.AIS_anto_addend <0 or self.AIS_anto_addend > 0.1: sys.exit('AIS T anto addend outside range (0 - 1.0)!')
+        self.AIS_a_anto = self.AIS_a_anto0 + self.AIS_anto_addend*3.
+        self.AIS_b_anto = self.AIS_b_anto0 + self.AIS_anto_addend
+
+        if self.include_MICI:
+            self.GIS_p = 2.5
+        else:
+            self.AIS_T_crit = 999.
 
     def __update_SLR_thermo(self,i):
         if self.dbg==1: print('   SLR thermo: ', i)
@@ -226,7 +252,9 @@ class globalSLRModel:
 
     def __update_SLR_MG(self, i):
         if self.dbg==1: print('   SLR MG: ', i)
-        change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq) * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
+        change = 0.0
+        if self.SLR_MG[i] < self.MG_V_0 and self.T_anomaly[i] > 0.0: 
+            change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq)**self.MG_exp * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
         self.SLR_MG[i+1] = self.SLR_MG[i] + change
         return
 
@@ -308,9 +336,7 @@ class globalSLRModel:
         Ta = (Tg - c1) / c2
     
         # Connecting Antarctic ocean temperature to Antarctic air temperature
-        a_anto = 0.3
-        b_anto = 0.5
-        Toc = Tf + (a_anto*Tg + b_anto-Tf) / (1. + np.exp(-Tg+(Tf-b_anto)/a_anto))
+        Toc = Tf + (self.AIS_a_anto*Tg + self.AIS_b_anto-Tf) / (1. + np.exp(-Tg+(Tf-self.AIS_b_anto)/self.AIS_a_anto))
 
         if self.dbg == 'AIS': print(i, 'SL:', SL)
         if self.dbg == 'AIS': print(i, 'dSL:', dSL)
@@ -368,9 +394,13 @@ class globalSLRModel:
             ISO = ISO_1
             fac = fac_1
 
-        self.AIS_Radius[i+1] = R + (Btot-F+ISO)/fac
-        self.AIS_Volume[i+1] = V + (Btot-F+ISO)
 
+        if Ta > self.AIS_T_crit: disintegration_volume = self.AIS_disintegration_rate * self.AIS_Volume[0] / 57.0
+        else: disintegration_volume = 0.0
+
+
+        self.AIS_Radius[i+1] = R + (Btot-F+ISO-disintegration_volume)/fac
+        self.AIS_Volume[i+1] = V + (Btot-F+ISO-disintegration_volume)
         self.SLR_AIS[i+1] = 57. * (1. - self.AIS_Volume[i+1]/self.AIS_Volume[0])
 
         if self.dbg == 'AIS':
