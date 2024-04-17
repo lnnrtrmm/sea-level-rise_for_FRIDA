@@ -1,5 +1,5 @@
 # Sea-level Rise Model
-This is the sea-level rise component as it is/will be implemented into the new integrated assessment model FRIDA. It takes global mean surface temperature anomalies since 1850 and ocean heat content changes as input to calculate total global sea-level rise (SLR) as the sum of five contributions:
+This is the sea-level rise component as it is/will be implemented into the new integrated assessment model [FRIDA](https://github.com/metno/WorldTransFRIDA). It takes global mean surface temperature anomalies since 1850 and ocean heat content changes as input to calculate total global sea-level rise (SLR) as the sum of five contributions:
 thermal expansion of the ocean, mountain glacier melt, Greenland ice sheet melt, Antarctic ice sheet melt and land water storage changes.
 
 ## Thermosteric SLR
@@ -33,6 +33,9 @@ The SLR contribution of the Greenland ice sheet is calculated as in MAGICC6 (Nau
 This implementation follows that of the BRICKv0.3 model (Wong et al., 2017), which employs the Danish Center for Earth System Science Antarctic Ice Sheet (DAIS) model to simulate the Antarctic Ice Sheet contribution to global sea level (Shaffer, 2014).
 An option to add Marine Ice Cliff Instability (MICI) behaviour was included in the model, as it is done in [ḾimiBRICK.jl](https://github.com/raddleverse/MimiBRICK.jl?tab=readme-ov-file).
 In order to add some expression of uncertainty to this component, a parameter called "AIS_anto_addend" with possible values between 0.02 and 0.07 (default 0.04) was introduced, which is added to the two parameters used in the calculation of Antarctic subsurface ocean temperature.
+
+## SLR from Land water storage
+In FRIDA this currently is a function of population. Here, it is simply a constant rate (0.3 mm/year) plus some noise.
 
 ## References:
 - Church, J. A., White, N. J., Konikow, L. F., Domingues, C. M., Cogley, J. G., Rignot, E., Gregory, J. M., van den Broeke, M. R., Monaghan, A. J., and Velicogna, I.: Revisiting the Earth's sea-level and energy budgets from 1961 to 2008, Geophys. Res. Lett., 38, L18601, https://doi.org/10.1029/2011GL048794, 2011.
