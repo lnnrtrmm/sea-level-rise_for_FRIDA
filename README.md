@@ -1,5 +1,5 @@
 # Sea-level Rise Model
-This is a simple model that takes global mean surface temperature anomalies since 1850 and ocean heat content changes as input to calculate total global sea-level rise (SLR) as the sum of five contributions:
+This is the sea-level rise component as it is/will be implemented into the new integrated assessment model FRIDA. It takes global mean surface temperature anomalies since 1850 and ocean heat content changes as input to calculate total global sea-level rise (SLR) as the sum of five contributions:
 thermal expansion of the ocean, mountain glacier melt, Greenland ice sheet melt, Antarctic ice sheet melt and land water storage changes.
 
 ## Thermosteric SLR
@@ -24,7 +24,7 @@ This is calculated using a widely used parameterization (e.g. in BRICKv0.3; Wong
 \frac{dSLR_{MG}}{dt} = \beta_0\cdot T(t)^{p}\cdot(1.0 - \frac{SLR_{MG}}{V_0})^n
 ```
 The nonlinearity exponent $p$ was added to the temperature anomaly, as this improves the fit with IPCC estimates (Fox-Kemper et al., 2021: Table 9.9). The parameter values are chosen as in Perette et al. (2013) and Li et al. (2020).
-The nonlinearity factor is set to 1.5.
+$p$ is set to 1.5. The uncertainty within the input global mean temperature leads to enough uncertainty of future SLR from this component compared to IPCC estimates (a consequence of $p>1$) that no additional range of parameter uncertainty needs to be given.
 
 ## SLR from Greenland ice sheet
 The SLR contribution of the Greenland ice sheet is calculated as in MAGICC6 (Nauels et al., 2017), dividing the contribution into changes in the surface mass balance and the discharge. A scale factor was added, which is multiplied to three of the parameters within the calculation to allow for a simple expression of uncertainties. $SLR_{GIS}$ is higher, if this scale factor is higher, and values should be within the range [0.7,1.0] (default: 0.85). 
