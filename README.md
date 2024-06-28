@@ -10,7 +10,7 @@ The annual controibution of thermosteric SLR is calculated as a linear function 
 Several different values for $r$ can be found in the literature:
 - 0.145 (Marti et al., 2023)
 - 0.12 (Levitus et al., 2012)
-- 0.11 (Church et al., 2011)
+- 0.15 (Church et al., 2011)
 - 0.105 (BRICKv0.3; Wong et al., 2017)
 - 0.115 from fitting MPI-ESM data
 - 0.1199 from IPCC estimates of ocean heat content changes and thermosteric SLR
