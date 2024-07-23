@@ -23,8 +23,8 @@ class globalSLRModel:
     #### Thermosteric SLR as a function of ocean energy input
     ##########################################################
     Thermosteric SLR follows ocean heat content changes
-    approximately linearly with rate factor r (m/YJ)
-    Use here r=0.11 because of large possible range of values
+    approximately linearly with rate factor r (m/YJ) (r is "EEH" in paper)
+    Use here r=0.105 because of large possible range of values
     and because it fits best with IPCC estimates.
     Reference values are:
     0.145 (Marti et al.2022)
@@ -48,6 +48,9 @@ class globalSLRModel:
     -> BRICK just describes a linear increase with some 
        random fluctuations (which only starts in year 2000)
 
+    New alternative:
+    Assume linear relationship between SLR_LWS and population!
+
     ##########################################################
     ##### SLR from Greenland Ice Sheet #######################
     ##########################################################
@@ -55,7 +58,7 @@ class globalSLRModel:
     Implementation separates the two components and adds them together.
     In the discharge component we have a choice between a low and
     a high discharge scenario, default is high, because it
-    seems to fit better with Observational data.
+    seems to fit better with observational data.
 
     ##########################################################
     ##### SLR from Antarctic Ice Sheet #######################
@@ -64,13 +67,20 @@ class globalSLRModel:
     This employs the DAIS model (Shaffer, 2014)
     '''
 
-    def __init__(self, T, OHC_change, sy=1750, ey=2300, dt=1.0, dbg=0, include_MICI=False):
+    def __init__(self, T, OHC_change, population=[-999], sy=1750, ey=2300, dt=1.0, dbg=0, include_MICI=False):
 
         ########## Set some global variables ################
         self.T_anomaly = T
         self.OHC_change = OHC_change
         self.include_MICI = include_MICI
-
+        
+        if population[0] == -999:
+            self.with_population = False
+            self.population = np.nan
+        else:
+            self.with_population = True
+            self.population = population
+        
         self.dbg = dbg
         
         # Timestep:
@@ -78,29 +88,48 @@ class globalSLRModel:
         self.ey = ey
         self.dt = dt
         self.nyears = int((self.ey - self.sy) / self.dt) + 1
-        self.time = np.linspace(self.sy+self.dt*0.5, self.ey-self.dt*0.5, self.nyears)
+        self.time = np.linspace(self.sy, self.ey, self.nyears)
 
         ########## Parameter settings ###################
 
         ####################################################################################
         ###########          Tune these parameters          ################################
         ####################################################################################
+
+        ### These are the scale factors that can be varied within [0,1] to cover the full uncertainty range
+        self.thermo_scale_factor = 0.5
+        self.LWS_scale_factor = 0.5
+        self.MG_scale_factor = 0.5
+        self.GIS_scale_factor = 0.5
+        self.AIS_scale_factor = 0.5
+
+        ### These are the ranges within which the uncertainty parameters will be scaled
+        ### Default value is the mean of the two.
+
         ### Tuning for thermosteric component
-        self.thermo_m_per_YJ = 0.105 # [0.09 - 0.12] uncertainty range
+        self.thermo_m_per_YJ_range = (0.1, 0.12)
 
         ### Tuning for Land water storage component
-        self.LWS_rate = 0.0003
+        self.LWS_rate_range = (0.0002, 0.0004)   # m per yr ; constant rate in case no population data are given
+        self.LWS_pop_sens_range = (1.0e-8, 6.0e-8) # m per Mp per yr
 
         ### Tuning for Mountain glacier component
-        self.MG_exp = 1.5   # [1, 2] -> Not needed, uncertainty in T input already covers IPCC estimated uncertainty range
+        # Varying both the sensitivity and elasticity of the T-dep. of SLR_MG
+        self.MG_beta_0_range = (0.0004, 0.001)
 
         ### Tuning for Greenland Ice Sheet component
-        self.GIS_scale_factor = 0.85   # [0.7, 1.0] range to get some uncertainty in the model
+        # Vary all parameters that are differing between the low and high discharge versions of MAGICC
+        self.GIS_rho_range = (1.0e-4, 5.0e-4)
+        self.GIS_v_range = (0.5e-4, 2.0e-4)
+        # implement MICI also for GrIS (like for AntIS, but with GSAT anomaly not T_Ant as reference)
+        self.GIS_disintegration_rate_range = (0.001, 0.01)
+        self.GIS_T_crit_range = (4,2.5) # Note lower number at 2nd position, as lower T_crit induces more melting
 
         ### Tuning for Antarctic Ice Sheet component
-        self.AIS_anto_addend = 0.04            # [0.02, 0.07]
-        self.AIS_disintegration_rate = 0.0093  # [0.0045 - 0.017]
-        self.AIS_T_crit = -15.0                # [-16, -14.6]
+        self.AIS_a_anto_range = (0.15, 0.3)
+        self.AIS_h0_range = (1600, 1900)
+        self.AIS_disintegration_rate_range = (0.000, 0.008)
+        self.AIS_T_crit_range = (-14, -15) # Note lower number at 2nd position, as lower T_crit induces more melting
 
 
 
@@ -112,39 +141,32 @@ class globalSLRModel:
         self.thermo_startyear = self.sy
 
         # Land water storage component
-        self.LWS_shape = 0.00018
-        self.LWS_startyear = 2000
+        self.LWS_startyear = 1960 # Assume that global groundwater levels were in balance in 1960
 
         # Mountain glacier component
-        self.MG_beta_0 = 0.0008
-        self.MG_n = 1.646
         self.MG_startyear = 1850
         self.MG_T_eq = 0.0
         self.MG_V_0 = 0.41
+        self.MG_n = 1.646
+        self.MG_T_exp = 1.5
 
         # GrIS component
         self.GIS_startyear = self.sy
-        self.GIS_s = 5
-        self.GIS_v0 = 0.0001148
-        self.GIS_X = 0.0
-        self.GIS_p = 2.0169
+        self.GIS_p = 2.0
         self.GIS_SMB_max = 7.36    # m
-        self.GIS_rho0 = 7.933e-4
-        self.GIS_eps = 0.4722
-        self.GIS_outlet_max0 = 0.05363 
+        self.GIS_eps = 0.39
+        self.GIS_outlet_max = 0.42
 
 
         # AntIS component
-        self.AIS_a_anto0 = 0.2
-        self.AIS_b_anto0 = 0.4
+        self.AIS_b_anto = 0.5
+        self.AIS_alpha = 0.5
         self.AIS_gamma = 2.
-        self.AIS_alpha = 0.35
         self.AIS_mu = 8.7
         self.AIS_nu = 0.012
         self.AIS_P0 = 0.35
         self.AIS_kappa = 0.04
         self.AIS_f0 = 1.2
-        self.AIS_h0 = 1700.
         self.AIS_c = 95.
         self.AIS_b0 = 775.
         self.AIS_slope = 0.0006
@@ -198,6 +220,8 @@ class globalSLRModel:
         self.SLR_thermo = self.SLR_thermo - self.SLR_thermo[index]
         self.SLR_LWS = self.SLR_LWS - self.SLR_LWS[index]
         self.SLR_MG = self.SLR_MG - self.SLR_MG[index]
+        self.SLR_GIS_SMB = self.SLR_GIS_SMB - self.SLR_GIS_SMB[index]
+        self.SLR_GIS_DIS = self.SLR_GIS_DIS - self.SLR_GIS_DIS[index]
         self.SLR_GIS = self.SLR_GIS - self.SLR_GIS[index]
         self.SLR_AIS = self.SLR_AIS - self.SLR_AIS[index]
         self.SLR_total = self.SLR_total - self.SLR_total[index]
@@ -223,35 +247,60 @@ class globalSLRModel:
         if not silent: print('   ...finished')
 
     def __init_params(self):
-        ## Adjust GIS parameters with scaling factor
-        GIS_fac = self.GIS_scale_factor
-        if GIS_fac < 0.7 or GIS_fac > 1.1: sys.exit('GIS scale factor outside range (0.7 - 1.1)!')
-        self.GIS_rho = self.GIS_rho0 * GIS_fac
-        self.GIS_outlet_max = self.GIS_outlet_max0 * GIS_fac
-        self.GIS_v = self.GIS_v0 * GIS_fac
 
+        ### Adjusting the parameters using the scale factor
+        # Thermo
+        self.thermo_m_per_YJ = self.__scale_single_param(self.thermo_m_per_YJ_range, self.thermo_scale_factor)
 
-        if self.AIS_anto_addend <0 or self.AIS_anto_addend > 0.1: sys.exit('AIS T anto addend outside range (0 - 1.0)!')
-        self.AIS_a_anto = self.AIS_a_anto0 + self.AIS_anto_addend*3.
-        self.AIS_b_anto = self.AIS_b_anto0 + self.AIS_anto_addend
+        # LWS
+        self.LWS_rate = self.__scale_single_param(self.LWS_rate_range, self.LWS_scale_factor)
+        self.LWS_pop_sens = self.__scale_single_param(self.LWS_pop_sens_range, self.LWS_scale_factor)
 
-        if not self.include_MICI: self.AIS_T_crit = 999.
+        # MG
+        self.MG_beta_0 = self.__scale_single_param(self.MG_beta_0_range, self.MG_scale_factor)
+
+        # GIS
+        self.GIS_rho = self.__scale_single_param(self.GIS_rho_range, self.GIS_scale_factor)
+        self.GIS_v = self.__scale_single_param(self.GIS_v_range, self.GIS_scale_factor)
+        self.GIS_T_crit = self.__scale_single_param(self.GIS_T_crit_range, self.GIS_scale_factor)
+        self.GIS_disintegration_rate = self.__scale_single_param(self.GIS_disintegration_rate_range, self.GIS_scale_factor)
+
+        # AIS
+        self.AIS_a_anto = self.__scale_single_param(self.AIS_a_anto_range, self.AIS_scale_factor)
+        self.AIS_h0 = self.__scale_single_param(self.AIS_h0_range, self.AIS_scale_factor)
+        self.AIS_T_crit = self.__scale_single_param(self.AIS_T_crit_range, self.AIS_scale_factor)
+        self.AIS_disintegration_rate = self.__scale_single_param(self.AIS_disintegration_rate_range, self.AIS_scale_factor)
+
+        if not self.include_MICI:
+            self.AIS_T_crit = 999.
+            self.GIS_T_crit = 999.
+        return
+
+    def __scale_single_param(self, prange, scale_factor):
+        return prange[0] + scale_factor * (prange[1] - prange[0])
+        
 
     def __update_SLR_thermo(self,i):
         if self.dbg==1: print('   SLR thermo: ', i)
         self.SLR_thermo[i+1] = self.SLR_thermo[i] + self.thermo_m_per_YJ * 1.e-24 * self.OHC_change[i]
         return
 
+
     def __update_SLR_LWS(self, i):
-        if self.dbg==1: print('   SLR LWS: ', i)        
-        self.SLR_LWS[i+1] = self.SLR_LWS[i] + np.random.normal(loc=self.LWS_rate, scale=self.LWS_shape)
+        if self.dbg==1: print('   SLR LWS: ', i)
+
+        if self.with_population:
+            self.SLR_LWS[i+1] = self.SLR_LWS[i] + self.LWS_pop_sens * self.population[i]
+        else:
+            self.SLR_LWS[i+1] = self.SLR_LWS[i] + self.LWS_rate
         return
+
 
     def __update_SLR_MG(self, i):
         if self.dbg==1: print('   SLR MG: ', i)
         change = 0.0
         if self.SLR_MG[i] < self.MG_V_0 and self.T_anomaly[i] > 0.0: 
-            change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq)**self.MG_exp * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
+            change = self.MG_beta_0 * (self.T_anomaly[i] - self.MG_T_eq)**self.MG_T_exp * (1.0 - self.SLR_MG[i]/self.MG_V_0)**self.MG_n
         self.SLR_MG[i+1] = self.SLR_MG[i] + change
         return
 
@@ -264,35 +313,49 @@ class globalSLRModel:
         if self.dbg==1: print('   SLR GIS: ', i)
         T = self.T_anomaly[i]
 
-        if T >= 0.0: term1 = (self.GIS_X*T + (1.-self.GIS_X)*T**self.GIS_p)
+        if T >= 0.0: term1 = T**self.GIS_p
         else: term1 = 0.0
         term2 = np.sqrt(1.0 - self.SLR_GIS_SMB[i]/self.GIS_SMB_max)
     
 
+        if  self.dbg == 'GIS': print(i, 'GIS_v:', self.GIS_v)
+        if  self.dbg == 'GIS': print(i, 'GIS_p:', self.GIS_p)
+
         if self.dbg == 'GIS': print(i, 'Tanomaly:', T)
         if self.dbg == 'GIS': print(i, 'term1:', term1)
         if self.dbg == 'GIS': print(i, 'term2:', term2)
+
         
 
         self.SLR_GIS_SMB[i+1] = self.SLR_GIS_SMB[i] + self.GIS_v * term1 * term2
+        
         if self.dbg == 'GIS': print(i, 'SLR_GIS_SMB:',  self.SLR_GIS_SMB[i+1])
 
-        tmp = self.GIS_rho * self.GIS_outlet_vdis[i] * np.exp(self.GIS_eps*T)
-        if tmp < 0: tmp = 0.0
+        # Marine ice cliff implementation
+        if T > self.GIS_T_crit:
+            disintegration_discharge = np.maximum(0.0, self.GIS_disintegration_rate) * (self.GIS_outlet_max - self.SLR_GIS_DIS[i])
+        else:
+            disintegration_discharge = 0.0
 
-        self.GIS_outlet_vdis[i+1] = self.GIS_outlet_vdis[i] - tmp
-        self.SLR_GIS_DIS[i+1] = self.GIS_s*(self.GIS_outlet_max - self.GIS_outlet_vdis[i+1])
+
+        if  self.dbg == 'GIS': print(i, 'GIS_eps:', self.GIS_eps)
+        if  self.dbg == 'GIS': print(i, 'GIS_rho:', self.GIS_rho)        
+        if  self.dbg == 'GIS': print(i, 'GIS R:', disintegration_discharge)        
+        if  self.dbg == 'GIS': print(i, 'GIS_outlet_max:', self.GIS_outlet_max)
+        if  self.dbg == 'GIS': print(i, 'SLR_GIS_DIS[i]:', self.SLR_GIS_DIS[i])
+        
+
+        SID = np.maximum(0, self.GIS_rho * (self.GIS_outlet_max - self.SLR_GIS_DIS[i]) * np.exp(self.GIS_eps*T))
+        self.SLR_GIS_DIS[i+1] = self.SLR_GIS_DIS[i] + SID + disintegration_discharge
 
         self.SLR_GIS[i+1] = self.SLR_GIS_DIS[i+1] + self.SLR_GIS_SMB[i+1]
 
         if self.dbg == 'GIS':
-            print(i, 'tmp:', tmp)
-            print(i, 'GIS_outlet_vdis:', self.GIS_outlet_vdis[i+1] )
             print(i, 'SLR_GIS_DIS:', self.SLR_GIS_DIS[i+1])
             print(i, 'SLR_GIS:', self.SLR_GIS[i+1])
-
-
+            print()
         return
+
 
     def __AIS_init(self):
         R = self.AIS_Rad0
@@ -309,7 +372,6 @@ class globalSLRModel:
             print('R init: ', R)
 
         return
-
 
     def __update_SLR_AIS(self, i):
         if self.dbg==1: print('   SLR AIS: ', i)
@@ -328,8 +390,8 @@ class globalSLRModel:
         lf    = -1.18
 
         # From fitting Antarctic air temperature to global mean temperature anomaly
-        c1 = 14.27863951
-        c2 = 0.77385984
+        c1 = 14.28
+        c2 = 0.77
         Ta = (Tg - c1) / c2
     
         # Connecting Antarctic ocean temperature to Antarctic air temperature
