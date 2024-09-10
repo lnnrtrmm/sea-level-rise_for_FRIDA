@@ -1,3 +1,5 @@
+# © Lennart Ramme, MPI-M, 2024
+
 import numpy as np
 import sys
 
@@ -49,7 +51,7 @@ class globalSLRModel:
        random fluctuations (which only starts in year 2000)
 
     New alternative:
-    Assume linear relationship between SLR_LWS and population!
+    Assume linear relationship between SLR_LWS rate and population.
 
     ##########################################################
     ##### SLR from Greenland Ice Sheet #######################
@@ -67,12 +69,13 @@ class globalSLRModel:
     This employs the DAIS model (Shaffer, 2014)
     '''
 
-    def __init__(self, T, OHC_change, population=[-999], sy=1750, ey=2300, dt=1.0, dbg=0, include_MICI=False):
+    def __init__(self, T, OHC_change, population=[-999], sy=1750, ey=2300, dt=1.0, dbg=0, include_MICI=False, randomize=False):
 
         ########## Set some global variables ################
         self.T_anomaly = T
         self.OHC_change = OHC_change
         self.include_MICI = include_MICI
+        self.randomize = randomize
         
         if population[0] == -999:
             self.with_population = False
@@ -216,6 +219,7 @@ class globalSLRModel:
 
     def align(self, year, silent=False):
         index = int(year - self.sy)
+        if index < 0 or index >= self.nyears: sys.exit('Cannot align to year outside of simulated range!')
         if not silent: print('Aligning SLR to be 0 in year '+str(year)+' (index: '+str(index)+')')
         self.SLR_thermo = self.SLR_thermo - self.SLR_thermo[index]
         self.SLR_LWS = self.SLR_LWS - self.SLR_LWS[index]
@@ -247,6 +251,12 @@ class globalSLRModel:
         if not silent: print('   ...finished')
 
     def __init_params(self):
+
+        if self.randomize:
+            # Randomize all scale factors to arbitrarily choose values from the uncertainty range for each contribution individually
+            all_factors = [self.thermo_scale_factor, self.LWS_scale_factor, self.MG_scale_factor, self.GIS_scale_factor, self.AIS_scale_factor]
+            for factor in all_factors: factor = np.random.rand()
+
 
         ### Adjusting the parameters using the scale factor
         # Thermo
