@@ -343,7 +343,7 @@ class globalSLRModel:
 
         # Marine ice cliff implementation
         if T > self.GIS_T_crit:
-            disintegration_discharge = np.maximum(0.0, self.GIS_disintegration_rate) * (self.GIS_outlet_max - self.SLR_GIS_DIS[i])
+            disintegration_discharge = np.maximum(0.0, self.GIS_disintegration_rate * (self.GIS_outlet_max - self.SLR_GIS_DIS[i]))
         else:
             disintegration_discharge = 0.0
 
